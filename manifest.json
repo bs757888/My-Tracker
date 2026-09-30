@@ -1,0 +1,11 @@
+{
+  "name": "Habit Tracker",
+  "short_name": "Habit Tracker",
+  "description": "A simple monthly habit and sleep tracker.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "orientation": "portrait",
+  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
