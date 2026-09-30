@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Habit Tracker</title>
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f3f4f6;color:#111827}
+.app{max-width:520px;margin:auto;padding:16px 14px 32px}
+header{background:#111827;color:white;border-radius:18px;padding:18px 16px;margin-bottom:14px}
+h1{margin:0;font-size:25px;text-align:center;letter-spacing:.5px}.sub{display:flex;gap:8px;margin-top:14px}
+input,textarea,select{font:inherit;border:1px solid #d1d5db;border-radius:10px;padding:10px;background:white;width:100%}
+.card{background:white;border-radius:16px;padding:14px;margin:12px 0;box-shadow:0 2px 10px #0000000d}
+.card h2{font-size:16px;margin:0 0 12px}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+.day{border:1px solid #d1d5db;background:#fff;border-radius:10px;padding:10px 4px;text-align:center;font-weight:700;min-height:45px}
+.day.active{background:#111827;color:white;border-color:#111827}
+.habit{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee}
+.habit:last-child{border-bottom:0}.habit-name{flex:1;font-weight:600;border:1px solid #d1d5db;border-radius:10px;padding:10px;background:white;width:100%}
+.check{width:42px;height:42px;border-radius:12px;border:2px solid #cbd5e1;background:white;font-size:21px}
+.check.on{background:#111827;color:white;border-color:#111827}.check.cross{background:white;color:#111827;border:2px solid #111827}.check.cross::after{content:'✕';font-size:22px}
+.sleep{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.sleep button{padding:12px 2px;border:1px solid #d1d5db;border-radius:10px;background:white;font-weight:700}
+.sleep button.on{background:#111827;color:white;border-color:#111827}
+textarea{min-height:85px;resize:vertical}.row{display:flex;gap:8px}.row button{flex:1}
+.primary{background:#111827;color:white;border:0;border-radius:10px;padding:11px;font-weight:700}
+.secondary{background:white;color:#111827;border:1px solid #d1d5db;border-radius:10px;padding:11px;font-weight:700}
+.progress{height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin:10px 0}.bar{height:100%;background:#111827;width:0}
+.small{font-size:12px;color:#6b7280}.stat{display:flex;justify-content:space-between;font-size:13px}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<h1>✤ HABIT TRACKER ✤</h1>
+<div class="sub">
+<input id="name" placeholder="Name">
+<input id="month" type="month">
+</div>
+</header>
+
+<div class="card">
+<h2>Choose day</h2>
+<div class="days" id="days"></div>
+</div>
+
+<div class="card">
+<h2>HABITS / TASKS</h2>
+<div id="habits"></div>
+<div class="progress"><div class="bar" id="bar"></div></div>
+<div class="stat"><span>Today's completion</span><b id="pct">0%</b></div><p class="small">Day 1 is the master list. Other days copy it automatically; editing a task on another day makes that day's list independent.</p><p class="small">Tap once for ✓ completed. Double-tap for ✕ not completed. Tap again to clear.</p>
+</div>
+
+<div class="card">
+<h2>SLEEP TIME</h2>
+<div class="sleep" id="sleep"></div>
+<p class="small">Tap the number of hours you slept.</p>
+</div>
+
+<div class="card">
+<h2>MONTHLY REFLECTION</h2>
+<label class="small">My monthly goal</label>
+<textarea id="goal" placeholder="What do I want to achieve this month?"></textarea>
+<br>
+<label class="small">What I achieved this month</label>
+<textarea id="achieved" placeholder="Wins, progress, milestones..."></textarea>
+<br>
+<label class="small">What should I improve?</label>
+<textarea id="improve" placeholder="What will I do differently?"></textarea>
+</div>
+
+<div class="card">
+<div class="row">
+<button class="primary" onclick="exportData()">Export backup</button>
+<button class="secondary" onclick="clearDay()">Clear day</button>
+</div>
+<p class="small">Your entries are saved automatically on this device.</p>
+</div>
+</div>
+
+<script>
+const HABITS=10,SLEEPS=[4,5,6,7,8,9];
+const MONTH_DAYS=[31,28,31,30,31,30,31,31,30,31,30,31];
+function daysInSelectedMonth(){let m=document.getElementById('month').value||new Date().toISOString().slice(0,7);return MONTH_DAYS[Number(m.slice(5,7))-1]||31;}
+let data=JSON.parse(localStorage.getItem('habitTracker')||'{}');
+data.name=data.name||''; data.month=data.month||new Date().toISOString().slice(0,7); data.months=data.months||{};
+function monthKey(){return document.getElementById('month').value||new Date().toISOString().slice(0,7)}
+function monthData(){let m=monthKey();data.months[m]=data.months[m]||{days:{},reflection:{goal:'',achieved:'',improve:''}};return data.months[m]}
+function dayData(d){let md=monthData();md.days[d]=md.days[d]||{habits:Array(HABITS).fill(false),sleep:null,names:null,namesAuto:d===1};if(!Array.isArray(md.days[d].names)){md.days[d].names=d===1?Array(HABITS).fill(''):(Array.isArray(md.days[1]?.names)?md.days[1].names.slice():Array(HABITS).fill(''));md.days[d].namesAuto=d!==1}return md.days[d]}
+function save(){data.name=document.getElementById('name').value;data.month=monthKey();let md=monthData();if(md.days[1]?.names){for(let d=2;d<=daysInSelectedMonth();d++){if(md.days[d]&&md.days[d].namesAuto!==false)md.days[d].names=md.days[1].names.slice()}}md.reflection.goal=document.getElementById('goal').value;md.reflection.achieved=document.getElementById('achieved').value;md.reflection.improve=document.getElementById('improve').value;localStorage.setItem('habitTracker',JSON.stringify(data))}
+let currentDay=Math.min(new Date().getDate(),daysInSelectedMonth());document.getElementById('name').value=data.name;document.getElementById('month').value=data.month;
+function renderDays(){let el=document.getElementById('days');el.innerHTML='';for(let d=1;d<=daysInSelectedMonth();d++){let b=document.createElement('button');b.className='day'+(d===currentDay?' active':'');b.textContent=d;b.onclick=()=>{currentDay=d;render()};el.appendChild(b)}}
+function render(){renderDays();let x=dayData(currentDay),h=document.getElementById('habits');h.innerHTML='';for(let i=0;i<HABITS;i++){let r=document.createElement('div');r.className='habit';let label=document.createElement('input');label.className='habit-name';label.type='text';label.placeholder=(i+1)+'. Write your habit / task';label.value=x.names[i]||'';label.oninput=()=>{x.names[i]=label.value;if(currentDay!==1)x.namesAuto=false;save()};label.onblur=()=>{if(currentDay!==1&&label.value.trim()===''){x.names=(dayData(1).names||Array(HABITS).fill('')).slice();x.namesAuto=true;save();render()}};let b=document.createElement('button');let state=x.habits[i];b.className='check'+(state===true?' on':state==='cross'?' cross':'');b.textContent=state===true?'✓':state==='cross'?'✕':'';b.onclick=()=>{if(b._tapTimer){clearTimeout(b._tapTimer);b._tapTimer=null;x.habits[i]=(x.habits[i]==='cross')?false:'cross';save();render()}else{b._tapTimer=setTimeout(()=>{b._tapTimer=null;x.habits[i]=(x.habits[i]===true)?false:true;save();render()},300)}};r.append(label,b);h.appendChild(r)}let done=x.habits.filter(v=>v===true).length;document.getElementById('pct').textContent=Math.round(done/HABITS*100)+'%';document.getElementById('bar').style.width=(done/HABITS*100)+'%';let sl=document.getElementById('sleep');sl.innerHTML='';SLEEPS.forEach(n=>{let b=document.createElement('button');b.textContent=n+' hrs';if(x.sleep===n)b.className='on';b.onclick=()=>{x.sleep=x.sleep===n?null:n;save();render()};sl.appendChild(b)});let ref=monthData().reflection;document.getElementById('goal').value=ref.goal||'';document.getElementById('achieved').value=ref.achieved||'';document.getElementById('improve').value=ref.improve||''}
+document.getElementById('name').addEventListener('input',save);['goal','achieved','improve'].forEach(id=>document.getElementById(id).addEventListener('input',save));document.getElementById('month').addEventListener('change',()=>{data.month=monthKey();currentDay=Math.min(currentDay,daysInSelectedMonth());render();save()});
+function clearDay(){if(confirm('Clear all entries for day '+currentDay+'?')){let x=dayData(currentDay),names=x.names.slice();let md=monthData();md.days[currentDay]={habits:Array(HABITS).fill(false),sleep:null,names:names,namesAuto:currentDay===1?true:x.namesAuto!==false};save();render()}}
+function exportData(){let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='habit-tracker-backup.json';a.click();URL.revokeObjectURL(a.href)}
+render();
+</script>
+</body>
+</html>
