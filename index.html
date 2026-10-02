@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Habit Tracker">
+<link rel="manifest" href="manifest.json">
 <title>Habit Tracker</title>
 <style>
 *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f3f4f6;color:#111827}
@@ -27,7 +31,7 @@ textarea{min-height:85px;resize:vertical}.row{display:flex;gap:8px}.row button{f
 .primary{background:#111827;color:white;border:0;border-radius:10px;padding:11px;font-weight:700}
 .secondary{background:white;color:#111827;border:1px solid #d1d5db;border-radius:10px;padding:11px;font-weight:700}
 .progress{height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin:10px 0}.bar{height:100%;background:#111827;width:0}
-.small{font-size:12px;color:#6b7280}.stat{display:flex;justify-content:space-between;font-size:13px}
+.small{font-size:12px;color:#6b7280}.stat{display:flex;justify-content:space-between;font-size:13px}#cloudCard{border:2px solid #e5e7eb}
 </style>
 </head>
 <body>
@@ -75,27 +79,120 @@ textarea{min-height:85px;resize:vertical}.row{display:flex;gap:8px}.row button{f
 <button class="primary" onclick="exportData()">Export backup</button>
 <button class="secondary" onclick="clearDay()">Clear day</button>
 </div>
-<p class="small">Your entries are saved automatically on this device.</p>
+<p class="small">Your entries are saved automatically on this device. When signed in, they are also backed up to the cloud.</p>
 </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+
 const HABITS=10,SLEEPS=[4,5,6,7,8,9];
 const MONTH_DAYS=[31,28,31,30,31,30,31,31,30,31,30,31];
+
+const SUPABASE_URL='https://gbzyuhglvbeayflflpbl.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdienl1aGdsdmJlYXlmbGZscGJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NDUzMDYsImV4cCI6MjEwNjUyMTMwNn0.0EQmQho7FwPbc4w8PxUCngcX-QE7thTC7jC1dWWTqPk';
+const supabaseClient=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const BACKUP_KEY='main';
+
 function daysInSelectedMonth(){let m=document.getElementById('month').value||new Date().toISOString().slice(0,7);return MONTH_DAYS[Number(m.slice(5,7))-1]||31;}
 let data=JSON.parse(localStorage.getItem('habitTracker')||'{}');
-data.name=data.name||''; data.month=data.month||new Date().toISOString().slice(0,7); data.months=data.months||{};
+data.name=data.name||'';data.month=data.month||new Date().toISOString().slice(0,7);data.months=data.months||{};
+let currentDay=Math.min(new Date().getDate(),daysInSelectedMonth());
+let cloudUser=null,cloudSaveTimer=null,restoringCloud=false;
+
+function status(t){document.getElementById('cloudStatus').textContent=t;}
 function monthKey(){return document.getElementById('month').value||new Date().toISOString().slice(0,7)}
 function monthData(){let m=monthKey();data.months[m]=data.months[m]||{days:{},reflection:{goal:'',achieved:'',improve:''}};return data.months[m]}
 function dayData(d){let md=monthData();md.days[d]=md.days[d]||{habits:Array(HABITS).fill(false),sleep:null,names:null,namesAuto:d===1};if(!Array.isArray(md.days[d].names)){md.days[d].names=d===1?Array(HABITS).fill(''):(Array.isArray(md.days[1]?.names)?md.days[1].names.slice():Array(HABITS).fill(''));md.days[d].namesAuto=d!==1}return md.days[d]}
-function save(){data.name=document.getElementById('name').value;data.month=monthKey();let md=monthData();if(md.days[1]?.names){for(let d=2;d<=daysInSelectedMonth();d++){if(md.days[d]&&md.days[d].namesAuto!==false)md.days[d].names=md.days[1].names.slice()}}md.reflection.goal=document.getElementById('goal').value;md.reflection.achieved=document.getElementById('achieved').value;md.reflection.improve=document.getElementById('improve').value;localStorage.setItem('habitTracker',JSON.stringify(data))}
-let currentDay=Math.min(new Date().getDate(),daysInSelectedMonth());document.getElementById('name').value=data.name;document.getElementById('month').value=data.month;
+
+function saveLocal(){
+  data.name=document.getElementById('name').value;data.month=monthKey();
+  let md=monthData();
+  if(md.days[1]?.names){for(let d=2;d<=daysInSelectedMonth();d++){if(md.days[d]&&md.days[d].namesAuto!==false)md.days[d].names=md.days[1].names.slice()}}
+  md.reflection.goal=document.getElementById('goal').value;md.reflection.achieved=document.getElementById('achieved').value;md.reflection.improve=document.getElementById('improve').value;
+  localStorage.setItem('habitTracker',JSON.stringify(data));
+}
+function save(){saveLocal();if(cloudUser&&!restoringCloud){clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(()=>saveCloud(true),800);}}
+
+async function saveCloud(silent=false){
+  if(!cloudUser){if(!silent)status('Cloud backup: please sign in first.');return false;}
+  saveLocal();if(!silent)status('Cloud backup: saving...');
+  const {error}=await supabaseClient.from('habit_backups').upsert(
+    {user_id:cloudUser.id,backup_key:BACKUP_KEY,data:data,updated_at:new Date().toISOString()},
+    {onConflict:'user_id,backup_key'}
+  );
+  if(error){console.error(error);status('Cloud backup error: '+error.message);return false;}
+  status('☁️ Cloud backup: saved '+new Date().toLocaleTimeString());return true;
+}
+
+async function restoreCloud(){
+  if(!cloudUser)return false;
+  status('Cloud backup: checking...');
+  const {data:row,error}=await supabaseClient.from('habit_backups').select('data,updated_at').eq('user_id',cloudUser.id).eq('backup_key',BACKUP_KEY).maybeSingle();
+  if(error){console.error(error);status('Cloud restore error: '+error.message);return false;}
+  if(!row){status('No cloud backup yet. Uploading this device data...');await saveCloud(true);status('☁️ First cloud backup saved.');return true;}
+  if(!row.data||typeof row.data!=='object'){status('Cloud backup is empty or invalid.');return false;}
+  restoringCloud=true;data=row.data;data.name=data.name||'';data.month=data.month||new Date().toISOString().slice(0,7);data.months=data.months||{};
+  localStorage.setItem('habitTracker',JSON.stringify(data));
+  document.getElementById('name').value=data.name;document.getElementById('month').value=data.month;
+  currentDay=Math.min(currentDay,daysInSelectedMonth());render();restoringCloud=false;
+  status('☁️ Restored from cloud: '+new Date(row.updated_at).toLocaleString());return true;
+}
+
+function showAuth(user){
+  cloudUser=user||null;
+  document.getElementById('authSignedOut').style.display=cloudUser?'none':'block';
+  document.getElementById('authSignedIn').style.display=cloudUser?'block':'none';
+  if(cloudUser){document.getElementById('authUser').textContent=cloudUser.email||'your account';status('Cloud backup: signed in.');}
+  else status('Cloud backup: not signed in');
+}
+async function signUp(){
+  const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPassword').value;
+  if(!email||!password){status('Enter your email and password.');return}
+  if(password.length<6){status('Password must be at least 6 characters.');return}
+  status('Creating account...');
+  const {data:r,error}=await supabaseClient.auth.signUp({email,password});
+  if(error){status('Sign-up error: '+error.message);return}
+  if(r.session)status('Account created. Restoring data...');
+  else status('Account created. Check your email, confirm it, then sign in.');
+}
+async function signIn(){
+  const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPassword').value;
+  if(!email||!password){status('Enter your email and password.');return}
+  status('Signing in...');
+  const {error}=await supabaseClient.auth.signInWithPassword({email,password});
+  if(error)status('Sign-in error: '+error.message);
+}
+async function signOut(){await supabaseClient.auth.signOut();showAuth(null);}
+
+document.getElementById('name').value=data.name;document.getElementById('month').value=data.month;
 function renderDays(){let el=document.getElementById('days');el.innerHTML='';for(let d=1;d<=daysInSelectedMonth();d++){let b=document.createElement('button');b.className='day'+(d===currentDay?' active':'');b.textContent=d;b.onclick=()=>{currentDay=d;render()};el.appendChild(b)}}
-function render(){renderDays();let x=dayData(currentDay),h=document.getElementById('habits');h.innerHTML='';for(let i=0;i<HABITS;i++){let r=document.createElement('div');r.className='habit';let label=document.createElement('input');label.className='habit-name';label.type='text';label.placeholder=(i+1)+'. Write your habit / task';label.value=x.names[i]||'';label.oninput=()=>{x.names[i]=label.value;if(currentDay!==1)x.namesAuto=false;save()};label.onblur=()=>{if(currentDay!==1&&label.value.trim()===''){x.names=(dayData(1).names||Array(HABITS).fill('')).slice();x.namesAuto=true;save();render()}};let b=document.createElement('button');let state=x.habits[i];b.className='check'+(state===true?' on':state==='cross'?' cross':'');b.textContent=state===true?'✓':state==='cross'?'✕':'';b.onclick=()=>{if(b._tapTimer){clearTimeout(b._tapTimer);b._tapTimer=null;x.habits[i]=(x.habits[i]==='cross')?false:'cross';save();render()}else{b._tapTimer=setTimeout(()=>{b._tapTimer=null;x.habits[i]=(x.habits[i]===true)?false:true;save();render()},300)}};r.append(label,b);h.appendChild(r)}let done=x.habits.filter(v=>v===true).length;document.getElementById('pct').textContent=Math.round(done/HABITS*100)+'%';document.getElementById('bar').style.width=(done/HABITS*100)+'%';let sl=document.getElementById('sleep');sl.innerHTML='';SLEEPS.forEach(n=>{let b=document.createElement('button');b.textContent=n+' hrs';if(x.sleep===n)b.className='on';b.onclick=()=>{x.sleep=x.sleep===n?null:n;save();render()};sl.appendChild(b)});let ref=monthData().reflection;document.getElementById('goal').value=ref.goal||'';document.getElementById('achieved').value=ref.achieved||'';document.getElementById('improve').value=ref.improve||''}
-document.getElementById('name').addEventListener('input',save);['goal','achieved','improve'].forEach(id=>document.getElementById(id).addEventListener('input',save));document.getElementById('month').addEventListener('change',()=>{data.month=monthKey();currentDay=Math.min(currentDay,daysInSelectedMonth());render();save()});
-function clearDay(){if(confirm('Clear all entries for day '+currentDay+'?')){let x=dayData(currentDay),names=x.names.slice();let md=monthData();md.days[currentDay]={habits:Array(HABITS).fill(false),sleep:null,names:names,namesAuto:currentDay===1?true:x.namesAuto!==false};save();render()}}
+function render(){
+  renderDays();let x=dayData(currentDay),h=document.getElementById('habits');h.innerHTML='';
+  for(let i=0;i<HABITS;i++){
+    let r=document.createElement('div');r.className='habit';let label=document.createElement('input');label.className='habit-name';label.type='text';label.placeholder=(i+1)+'. Write your habit / task';label.value=x.names[i]||'';
+    label.oninput=()=>{x.names[i]=label.value;if(currentDay!==1)x.namesAuto=false;save()};
+    label.onblur=()=>{if(currentDay!==1&&label.value.trim()===''){x.names=(dayData(1).names||Array(HABITS).fill('')).slice();x.namesAuto=true;save();render()}};
+    let b=document.createElement('button'),state=x.habits[i];b.className='check'+(state===true?' on':state==='cross'?' cross':'');b.textContent=state===true?'✓':state==='cross'?'✕':'';
+    b.onclick=()=>{if(b._tapTimer){clearTimeout(b._tapTimer);b._tapTimer=null;x.habits[i]=(x.habits[i]==='cross')?false:'cross';save();render()}else{b._tapTimer=setTimeout(()=>{b._tapTimer=null;x.habits[i]=(x.habits[i]===true)?false:true;save();render()},300)}};
+    r.append(label,b);h.appendChild(r);
+  }
+  let done=x.habits.filter(v=>v===true).length;document.getElementById('pct').textContent=Math.round(done/HABITS*100)+'%';document.getElementById('bar').style.width=(done/HABITS*100)+'%';
+  let sl=document.getElementById('sleep');sl.innerHTML='';SLEEPS.forEach(n=>{let b=document.createElement('button');b.textContent=n+' hrs';if(x.sleep===n)b.className='on';b.onclick=()=>{x.sleep=x.sleep===n?null:n;save();render()};sl.appendChild(b)});
+  let ref=monthData().reflection;document.getElementById('goal').value=ref.goal||'';document.getElementById('achieved').value=ref.achieved||'';document.getElementById('improve').value=ref.improve||'';
+}
+document.getElementById('name').addEventListener('input',save);['goal','achieved','improve'].forEach(id=>document.getElementById(id).addEventListener('input',save));
+document.getElementById('month').addEventListener('change',()=>{data.month=monthKey();currentDay=Math.min(currentDay,daysInSelectedMonth());render();save()});
+function clearDay(){if(confirm('Clear all entries for day '+currentDay+'?')){let x=dayData(currentDay),names=x.names.slice(),md=monthData();md.days[currentDay]={habits:Array(HABITS).fill(false),sleep:null,names:names,namesAuto:currentDay===1?true:x.namesAuto!==false};save();render()}}
 function exportData(){let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='habit-tracker-backup.json';a.click();URL.revokeObjectURL(a.href)}
 render();
+
+supabaseClient.auth.onAuthStateChange((event,session)=>{
+  showAuth(session?.user||null);
+  if(session?.user)setTimeout(()=>restoreCloud(),0);
+});
+supabaseClient.auth.getSession().then(({data:{session}})=>{showAuth(session?.user||null);if(session?.user)restoreCloud();});
+
 </script>
 </body>
 </html>
