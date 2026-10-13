@@ -82,7 +82,7 @@ textarea{min-height:85px;resize:vertical}.row{display:flex;gap:8px}.row button{f
 </div>
 
 <script>
-const HABITS=10,SLEEPS=[4,5,6,7,8,9];
+const HABITS=8,SLEEPS=[4,5,6,7,8,9];
 function daysInSelectedMonth(){let m=document.getElementById('month').value||new Date().toISOString().slice(0,7);let y=Number(m.slice(0,4)),mo=Number(m.slice(5,7));return new Date(y,mo,0).getDate();}
 let data=JSON.parse(localStorage.getItem('habitTracker')||'{}');
 data.name=data.name||''; data.month=data.month||new Date().toISOString().slice(0,7); data.months=data.months||{};
